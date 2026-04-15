@@ -1,0 +1,3 @@
+# Session config files are user-specific (pane layout depends on local tmux setup).
+# Each user creates their own after setting up panes with tmux-session-config.sh.
+*.conf
