@@ -1,0 +1,100 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 480 380" width="480" height="380">
+  <style>
+    text { font-family: 'SF Mono', 'JetBrains Mono', 'Fira Code', Menlo, Consolas, monospace; }
+  </style>
+
+  <!-- Background -->
+  <rect width="480" height="380" rx="12" fill="#1e1e2e"/>
+
+  <!-- Title bar -->
+  <rect width="480" height="34" rx="12" fill="#181825"/>
+  <rect y="22" width="480" height="12" fill="#181825"/>
+  <circle cx="22" cy="17" r="6" fill="#ff5f56"/>
+  <circle cx="42" cy="17" r="6" fill="#ffbd2e"/>
+  <circle cx="62" cy="17" r="6" fill="#27c93f"/>
+  <text x="240" y="22" font-size="12" fill="#6c7086" text-anchor="middle">submit key resolution</text>
+
+  <!-- Arrow helper -->
+  <defs>
+    <marker id="down" markerWidth="8" markerHeight="8" refX="4" refY="7" orient="auto">
+      <polygon points="0 0, 8 0, 4 7" fill="#585b70"/>
+    </marker>
+    <marker id="right-green" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
+      <polygon points="0 0, 0 8, 7 4" fill="#a6e3a1"/>
+    </marker>
+    <marker id="right-red" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
+      <polygon points="0 0, 0 8, 7 4" fill="#f38ba8"/>
+    </marker>
+  </defs>
+
+  <!-- ── Node 1: ENV VAR ── -->
+  <rect x="120" y="52" width="240" height="38" rx="6" fill="#313244" stroke="#89b4fa" stroke-width="1.5"/>
+  <text x="240" y="68" font-size="10.5" fill="#89b4fa" text-anchor="middle">TMUX_TARGET_SEND_CURSOR</text>
+  <text x="240" y="82" font-size="10" fill="#6c7086" text-anchor="middle">env var set?</text>
+
+  <!-- YES branch right -->
+  <line x1="360" y1="71" x2="420" y2="71" stroke="#a6e3a1" stroke-width="1.5" marker-end="url(#right-green)"/>
+  <text x="365" y="66" font-size="9" fill="#a6e3a1">YES</text>
+  <rect x="422" y="58" width="50" height="26" rx="5" fill="#1e2030" stroke="#a6e3a1" stroke-width="1"/>
+  <text x="447" y="75" font-size="10" fill="#a6e3a1" text-anchor="middle">use it</text>
+
+  <!-- NO arrow down -->
+  <line x1="240" y1="90" x2="240" y2="114" stroke="#585b70" stroke-width="1.5" marker-end="url(#down)"/>
+  <text x="248" y="107" font-size="9" fill="#585b70">NO</text>
+
+  <!-- ── Node 2: CONFIG FILE ── -->
+  <rect x="100" y="115" width="280" height="38" rx="6" fill="#313244" stroke="#89b4fa" stroke-width="1.5"/>
+  <text x="240" y="131" font-size="10.5" fill="#89b4fa" text-anchor="middle">~/.config/claude-tmux/cursor-submit</text>
+  <text x="240" y="145" font-size="10" fill="#6c7086" text-anchor="middle">config file exists?</text>
+
+  <!-- YES branch right -->
+  <line x1="380" y1="134" x2="420" y2="134" stroke="#a6e3a1" stroke-width="1.5" marker-end="url(#right-green)"/>
+  <text x="385" y="129" font-size="9" fill="#a6e3a1">YES</text>
+  <rect x="422" y="121" width="50" height="26" rx="5" fill="#1e2030" stroke="#a6e3a1" stroke-width="1"/>
+  <text x="447" y="138" font-size="10" fill="#a6e3a1" text-anchor="middle">use it</text>
+
+  <!-- NO arrow down -->
+  <line x1="240" y1="153" x2="240" y2="177" stroke="#585b70" stroke-width="1.5" marker-end="url(#down)"/>
+  <text x="248" y="170" font-size="9" fill="#585b70">NO</text>
+
+  <!-- ── Node 3: GHOSTTY ── -->
+  <rect x="110" y="178" width="260" height="38" rx="6" fill="#313244" stroke="#89b4fa" stroke-width="1.5"/>
+  <text x="240" y="194" font-size="10.5" fill="#89b4fa" text-anchor="middle">Ghostty detected?</text>
+  <text x="240" y="208" font-size="9.5" fill="#6c7086" text-anchor="middle">TERM_PROGRAM=ghostty or GHOSTTY_RESOURCES_DIR</text>
+
+  <!-- YES → kitty-enter -->
+  <line x1="370" y1="197" x2="420" y2="197" stroke="#a6e3a1" stroke-width="1.5" marker-end="url(#right-green)"/>
+  <text x="375" y="192" font-size="9" fill="#a6e3a1">YES</text>
+  <rect x="422" y="184" width="50" height="26" rx="5" fill="#1e2030" stroke="#a6e3a1" stroke-width="1"/>
+  <text x="447" y="197" font-size="8.5" fill="#a6e3a1" text-anchor="middle">kitty-enter</text>
+  <text x="447" y="207" font-size="8" fill="#45475a" text-anchor="middle">ESC[13u</text>
+
+  <!-- NO arrow down -->
+  <line x1="240" y1="216" x2="240" y2="240" stroke="#585b70" stroke-width="1.5" marker-end="url(#down)"/>
+  <text x="248" y="233" font-size="9" fill="#585b70">NO</text>
+
+  <!-- ── Node 4: macOS ── -->
+  <rect x="140" y="241" width="200" height="38" rx="6" fill="#313244" stroke="#89b4fa" stroke-width="1.5"/>
+  <text x="240" y="257" font-size="10.5" fill="#89b4fa" text-anchor="middle">macOS (Darwin)?</text>
+  <text x="240" y="271" font-size="9.5" fill="#6c7086" text-anchor="middle">uname == Darwin</text>
+
+  <!-- YES → kitty-enter -->
+  <line x1="340" y1="260" x2="380" y2="260" stroke="#a6e3a1" stroke-width="1.5" marker-end="url(#right-green)"/>
+  <text x="345" y="255" font-size="9" fill="#a6e3a1">YES</text>
+  <rect x="382" y="247" width="50" height="26" rx="5" fill="#1e2030" stroke="#a6e3a1" stroke-width="1"/>
+  <text x="407" y="260" font-size="8.5" fill="#a6e3a1" text-anchor="middle">kitty-enter</text>
+  <text x="407" y="270" font-size="8" fill="#45475a" text-anchor="middle">ESC[13u</text>
+
+  <!-- NO arrow down -->
+  <line x1="240" y1="279" x2="240" y2="303" stroke="#585b70" stroke-width="1.5" marker-end="url(#down)"/>
+  <text x="248" y="296" font-size="9" fill="#585b70">NO</text>
+
+  <!-- ── Terminal result ── -->
+  <rect x="150" y="304" width="180" height="38" rx="6" fill="#1e2030" stroke="#f38ba8" stroke-width="1.5"/>
+  <text x="240" y="320" font-size="10.5" fill="#f38ba8" text-anchor="middle">c-enter</text>
+  <text x="240" y="334" font-size="9.5" fill="#45475a" text-anchor="middle">tmux Ctrl+Enter</text>
+
+  <!-- Legend note -->
+  <rect x="10" y="354" width="460" height="18" rx="4" fill="#11111b"/>
+  <text x="240" y="366" font-size="9.5" fill="#45475a" text-anchor="middle">override: echo "kitty-enter" &gt; ~/.config/claude-tmux/cursor-submit</text>
+</svg>

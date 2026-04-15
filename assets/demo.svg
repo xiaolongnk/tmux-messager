@@ -1,0 +1,127 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 450" width="800" height="450">
+  <style>
+    text { font-family: 'SF Mono', 'JetBrains Mono', 'Fira Code', Menlo, Consolas, monospace; }
+  </style>
+
+  <!-- Window chrome -->
+  <rect width="800" height="450" rx="12" fill="#1e1e2e"/>
+  <rect width="800" height="34" rx="12" fill="#181825"/>
+  <rect y="22" width="800" height="12" fill="#181825"/>
+
+  <!-- Traffic lights -->
+  <circle cx="22" cy="17" r="6" fill="#ff5f56"/>
+  <circle cx="42" cy="17" r="6" fill="#ffbd2e"/>
+  <circle cx="62" cy="17" r="6" fill="#27c93f"/>
+
+  <!-- Window title -->
+  <text x="400" y="22" font-size="12" fill="#6c7086" text-anchor="middle">tmux: myproject  —  4 panes</text>
+
+  <!-- Pane dividers -->
+  <line x1="400" y1="34" x2="400" y2="380" stroke="#313244" stroke-width="2"/>
+  <line x1="0" y1="207" x2="800" y2="207" stroke="#313244" stroke-width="2"/>
+
+  <!-- ============ TOP-LEFT: Claude Code ============ -->
+  <rect x="1" y="35" width="397" height="22" fill="#1e2030"/>
+  <text x="10" y="51" font-size="11" fill="#89b4fa">● Claude Code</text>
+  <text x="290" y="51" font-size="10" fill="#45475a">%11 · focused</text>
+
+  <text x="10" y="74" font-size="10.5" fill="#6c7086">$ cursor-dispatch.sh \</text>
+  <text x="10" y="89" font-size="10.5" fill="#6c7086">    "implement the login page"</text>
+
+  <text x="10" y="112" font-size="10.5" fill="#a6e3a1">▶ scanning panes for idle Cursor…</text>
+  <text x="10" y="127" font-size="10.5" fill="#a6e3a1">▶ found pane %23 (last used: 4m ago)</text>
+  <text x="10" y="142" font-size="10.5" fill="#a6e3a1">▶ terminal: ghostty  →  ESC[13u</text>
+  <text x="10" y="157" font-size="10.5" fill="#a6e3a1">▶ dispatched · reply-to: %11 injected</text>
+
+  <text x="10" y="178" font-size="10.5" fill="#6c7086">$</text>
+  <rect x="21" y="166" width="7" height="14" fill="#cdd6f4" opacity="0.6"/>
+
+  <!-- ============ TOP-RIGHT: Cursor Agent ============ -->
+  <rect x="402" y="35" width="397" height="22" fill="#1e2030"/>
+  <text x="412" y="51" font-size="11" fill="#cba6f7">● Cursor Agent</text>
+  <text x="690" y="51" font-size="10" fill="#45475a">%23</text>
+
+  <text x="412" y="74" font-size="10.5" fill="#cdd6f4">implement the login page</text>
+
+  <text x="412" y="97" font-size="10.5" fill="#cba6f7">REQUIRED: after completing, run:</text>
+  <text x="412" y="114" font-size="10.5" fill="#f9e2af">bash scripts/tmux-target-send.sh \</text>
+  <text x="412" y="129" font-size="10.5" fill="#f9e2af">  --direct-target main:0:1 \</text>
+  <text x="412" y="144" font-size="10.5" fill="#f9e2af">  claude "done — see PR #42"</text>
+
+  <!-- ============ BOTTOM-LEFT: Gemini ============ -->
+  <rect x="1" y="208" width="397" height="22" fill="#1e2030"/>
+  <text x="10" y="224" font-size="11" fill="#94e2d5">● Gemini CLI</text>
+  <text x="290" y="224" font-size="10" fill="#45475a">%34</text>
+
+  <text x="10" y="248" font-size="10.5" fill="#6c7086">$ gemini review PR #42</text>
+  <text x="10" y="264" font-size="10.5" fill="#94e2d5">▶ 2 suggestions:</text>
+  <text x="10" y="279" font-size="10.5" fill="#6c7086">  · extract magic strings to constants</text>
+  <text x="10" y="294" font-size="10.5" fill="#6c7086">  · add error boundary for auth failures</text>
+  <text x="10" y="315" font-size="10.5" fill="#6c7086">$</text>
+  <rect x="21" y="303" width="7" height="14" fill="#cdd6f4" opacity="0.6"/>
+
+  <!-- ============ BOTTOM-RIGHT: Shell ============ -->
+  <rect x="402" y="208" width="397" height="22" fill="#1e2030"/>
+  <text x="412" y="224" font-size="11" fill="#fab387">● Shell</text>
+  <text x="690" y="224" font-size="10" fill="#45475a">%12</text>
+
+  <text x="412" y="248" font-size="10.5" fill="#6c7086">$ git log --oneline -3</text>
+  <text x="412" y="264" font-size="10.5" fill="#fab387">a3f12b1  feat: login page scaffold</text>
+  <text x="412" y="279" font-size="10.5" fill="#6c7086">c8e901d  chore: project setup</text>
+  <text x="412" y="294" font-size="10.5" fill="#6c7086">d01a7f2  init</text>
+  <text x="412" y="315" font-size="10.5" fill="#6c7086">$</text>
+  <rect x="423" y="303" width="7" height="14" fill="#cdd6f4" opacity="0.6"/>
+
+  <!-- ============ DISPATCH ARROW: Claude → Cursor ============ -->
+  <defs>
+    <marker id="arr-fwd" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+      <polygon points="0 0, 10 3.5, 0 7" fill="#f38ba8"/>
+    </marker>
+    <marker id="arr-back" markerWidth="10" markerHeight="7" refX="1" refY="3.5" orient="auto">
+      <polygon points="10 0, 0 3.5, 10 7" fill="#89dceb"/>
+    </marker>
+  </defs>
+
+  <!-- Forward: Claude dispatches to Cursor -->
+  <path d="M 330 130 C 362 130, 372 74, 400 74"
+        stroke="#f38ba8" stroke-width="2" fill="none"
+        stroke-dasharray="6,3" marker-end="url(#arr-fwd)"/>
+  <text x="305" y="125" font-size="9.5" fill="#f38ba8">dispatch →</text>
+
+  <!-- Reply: Cursor replies to Claude (shown as future) -->
+  <path d="M 402 157 C 374 157, 362 178, 335 178"
+        stroke="#89dceb" stroke-width="1.5" fill="none"
+        stroke-dasharray="5,3" marker-end="url(#arr-back)" opacity="0.7"/>
+  <text x="412" y="165" font-size="9.5" fill="#89dceb" opacity="0.7">← reply</text>
+
+  <!-- ============ BOTTOM LEGEND STRIP ============ -->
+  <rect x="0" y="381" width="800" height="69" fill="#11111b"/>
+  <line x1="0" y1="381" x2="800" y2="381" stroke="#313244" stroke-width="1"/>
+
+  <!-- Legend dots + labels -->
+  <circle cx="20" cy="400" r="5" fill="#89b4fa"/>
+  <text x="30" y="404" font-size="10" fill="#a6adc8">Claude Code</text>
+
+  <circle cx="120" cy="400" r="5" fill="#cba6f7"/>
+  <text x="130" y="404" font-size="10" fill="#a6adc8">Cursor Agent</text>
+
+  <circle cx="235" cy="400" r="5" fill="#94e2d5"/>
+  <text x="245" y="404" font-size="10" fill="#a6adc8">Gemini CLI</text>
+
+  <circle cx="330" cy="400" r="5" fill="#fab387"/>
+  <text x="340" y="404" font-size="10" fill="#a6adc8">Shell</text>
+
+  <!-- Arrow legend -->
+  <line x1="460" y1="400" x2="492" y2="400" stroke="#f38ba8" stroke-width="2" stroke-dasharray="5,3"/>
+  <polygon points="492,396.5 500,400 492,403.5" fill="#f38ba8"/>
+  <text x="506" y="404" font-size="10" fill="#a6adc8">dispatch (cursor-dispatch.sh)</text>
+
+  <!-- Bottom note -->
+  <text x="400" y="430" font-size="10" fill="#45475a" text-anchor="middle">
+    pane IDs (%11, %23) are layout-stable · submit key auto-detected · reply-to injected automatically
+  </text>
+
+  <!-- Bottom rounded corners -->
+  <rect x="0" y="438" width="800" height="12" fill="#11111b"/>
+  <rect x="0" y="438" width="800" height="12" rx="0" fill="#11111b"/>
+</svg>
