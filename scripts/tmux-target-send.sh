@@ -14,10 +14,11 @@ Usage:
   <window>     tmux window name, status-bar window index (e.g. 5), or **.** = current window
                (#{window_index} of the attached client — do not assume a fixed tab name).
   <pane_index> numeric pane index inside that window (tmux #{pane_index}).
-  shell|claude After the message: C-m (Enter). Use shell for generic "type + Enter".
+  shell|claude After the message: C-m (Enter). In Fish shell panes: ESC[13u (kitty-enter) is used
+               automatically — Fish + Ghostty/kitty terminal requires this for submit.
   cursor       After the message: submit key (see defaults below).
 
-Options (cursor submit only; shell always uses C-m; claude supports --wait):
+Options (cursor submit only; shell/claude use C-m on zsh/bash or kitty-enter on Fish; claude supports --wait):
   --no-reply            Omit the REQUIRED reply-back instruction (use for ack/notification messages
                         to avoid infinite ack loops between agents).
   --wait N              Before sending to a claude pane: poll up to N seconds for idle state.
@@ -370,6 +371,28 @@ _exit_copy_mode() {
   tmux send-keys -t "$1" -X cancel 2>/dev/null || true
 }
 
+# Detect if target pane is running Fish shell (at the prompt or as login shell).
+# Fish + Ghostty/kitty terminals require ESC[13u (kitty-enter) instead of C-m for submit.
+# Detection order:
+#   1. pane_current_command == fish  → pane is at Fish prompt
+#   2. User's login shell is Fish    → macOS dscl → /etc/passwd → $SHELL fallback
+_is_fish_target() {
+  local cmd
+  cmd=$(tmux display-message -t "$TARGET" -p '#{pane_current_command}' 2>/dev/null) || cmd=""
+  [[ "$cmd" == fish ]] && return 0
+  # Determine user's login shell (more reliable than $SHELL which can be stale in subprocesses).
+  local login_shell=""
+  if command -v dscl >/dev/null 2>&1; then
+    login_shell=$(dscl . -read "/Users/$(id -un)" UserShell 2>/dev/null | awk '{print $2}') || login_shell=""
+  fi
+  if [[ -z "$login_shell" ]]; then
+    login_shell=$(getent passwd "$(id -un)" 2>/dev/null | cut -d: -f7) || login_shell=""
+  fi
+  [[ -z "$login_shell" ]] && login_shell="${SHELL:-/bin/sh}"
+  case "$login_shell" in *fish*) return 0 ;; esac
+  return 1
+}
+
 case "$MODE" in
   cursor|gemini)
     _exit_copy_mode "$TARGET"
@@ -381,8 +404,24 @@ case "$MODE" in
     _exit_copy_mode "$TARGET"
     tmux send-keys -t "$TARGET" "$TEXT"
     sleep 0.1
-    tmux send-keys -t "$TARGET" C-m
+    if _is_fish_target; then
+      # Fish + Ghostty/kitty: C-m does not submit in Claude Code / agent TUIs.
+      # ESC[13u (kitty-enter) is required — same key that cursor mode uses.
+      echo "send-keys: Fish shell detected → using kitty-enter (ESC[13u) instead of C-m" >&2
+      tmux send-keys -t "$TARGET" $'\e[13u'
+    else
+      tmux send-keys -t "$TARGET" C-m
+    fi
     ;;
-  shell) tmux send-keys -t "$TARGET" "$TEXT" C-m ;;
+  shell)
+    if _is_fish_target; then
+      echo "send-keys: Fish shell detected → using kitty-enter (ESC[13u) instead of C-m" >&2
+      tmux send-keys -t "$TARGET" "$TEXT"
+      sleep 0.1
+      tmux send-keys -t "$TARGET" $'\e[13u'
+    else
+      tmux send-keys -t "$TARGET" "$TEXT" C-m
+    fi
+    ;;
   *) usage ;;
 esac
