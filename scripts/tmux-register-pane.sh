@@ -45,7 +45,7 @@ while [[ "$pid" -gt 1 && "$count" -lt 15 ]]; do
   echo "  pid=${pid} → ${FILE}"
   pid=$(ps -o ppid= -p "$pid" 2>/dev/null | tr -d ' ') || break
   [[ -z "$pid" ]] && break
-  ((count++))
+  count=$(( count + 1 ))
 done
 
 echo ""
@@ -79,11 +79,13 @@ _current_window=$(tmux display-message -p '#{window_index}' 2>/dev/null) || _cur
 _my_pane="$PANE"
 
 _cursor_panes=()
-while IFS= read -r _idx; do
+_cursor_pane_ids=()
+_cursor_windows=()
+while IFS='|' read -r _win_idx _idx _pid; do
   # Skip Claude's own pane.
-  [[ "$_idx" == "$_my_pane" ]] && continue
+  [[ "$_pid" == "$TMUX_PANE" ]] && continue
 
-  _target="${_current_session}:${_current_window}.${_idx}"
+  _target="${_current_session}:${_win_idx}.${_idx}"
 
   # Primary: capture pane content and look for Cursor Agent UI fingerprints.
   # These strings appear in the Cursor Agent terminal UI regardless of pane title.
@@ -106,27 +108,31 @@ while IFS= read -r _idx; do
 
   if [[ "$_is_cursor" -eq 1 ]]; then
     _cursor_panes+=("$_idx")
-    echo "  found cursor pane: index=${_idx}"
+    _cursor_pane_ids+=("$_pid")
+    _cursor_windows+=("$_win_idx")
+    echo "  found cursor pane: window=${_win_idx} index=${_idx} pane_id=${_pid}"
   fi
-done < <(tmux list-panes -t "${_current_session}:${_current_window}" -F '#{pane_index}' 2>/dev/null)
+done < <(tmux list-panes -s -t "${_current_session}" -F '#{window_index}|#{pane_index}|#{pane_id}' 2>/dev/null)
 
 if [[ "${#_cursor_panes[@]}" -gt 0 ]]; then
   _pane_list=$(IFS=,; echo "${_cursor_panes[*]}")
+  _first_win="${_cursor_windows[0]}"
+  _first_pane="${_cursor_panes[0]}"
+  _first_pane_id="${_cursor_pane_ids[0]}"
   # Store pane indices (backward compat) and full session:window:pane addr for first cursor (canonical pair).
   bash "$SESSION_CONFIG" set cursor "${_cursor_panes[@]}" 2>/dev/null \
     && echo "registered cursor panes → ${_pane_list} in session config" \
     || echo "warning: could not write session config (tmux-session-config.sh)"
-  bash "$SESSION_CONFIG" set-addr cursor "${_current_session}:${_current_window}:${_cursor_panes[0]}" 2>/dev/null \
-    && echo "cursor_addr=${_current_session}:${_current_window}:${_cursor_panes[0]} → session config" \
+  bash "$SESSION_CONFIG" set-addr cursor "${_current_session}:${_first_win}:${_first_pane}" 2>/dev/null \
+    && echo "cursor_addr=${_current_session}:${_first_win}:${_first_pane} → session config" \
     || echo "warning: could not write cursor_addr to session config"
   # Store pane_id for first cursor pane — layout-stable, live-resolved at send time (no content scan).
-  _cursor_pane_id=$(tmux display-message -t "${_current_session}:${_current_window}.${_cursor_panes[0]}" -p '#{pane_id}' 2>/dev/null) || _cursor_pane_id=""
-  if [[ -n "$_cursor_pane_id" ]]; then
-    bash "$SESSION_CONFIG" set-pane-id cursor "${_cursor_pane_id}" 2>/dev/null \
-      && echo "cursor pane_id=${_cursor_pane_id} → session config (layout-stable)" \
+  if [[ -n "$_first_pane_id" ]]; then
+    bash "$SESSION_CONFIG" set-pane-id cursor "${_first_pane_id}" 2>/dev/null \
+      && echo "cursor pane_id=${_first_pane_id} → session config (layout-stable)" \
       || echo "warning: could not write cursor pane_id to session config"
   fi
 else
-  echo "  no cursor panes found in window ${_current_window} (config unchanged)"
+  echo "  no cursor panes found in session ${_current_session} (config unchanged)"
   echo "  hint: run tmux-cursor-dual-setup.sh to create cursor panes, then re-run this script"
 fi

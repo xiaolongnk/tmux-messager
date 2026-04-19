@@ -18,7 +18,7 @@ resolve_tmux_cursor_submit() {
   local f line
   f="${CLAUDE_TMUX_CURSOR_SUBMIT_FILE:-${SUPERX_TMUX_CURSOR_SUBMIT_FILE:-${XDG_CONFIG_HOME:-$HOME/.config}/claude-tmux/cursor-submit}}"
   if [[ -f "$f" ]]; then
-    line=$(grep -v '^[[:space:]]*#' "$f" | grep -m1 -v '^[[:space:]]*$' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//') || true
+    line=$(grep -v '^[[:space:]]*#' "$f" | grep -m1 -v '^[[:space:]]*$' | tr -d '\r' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//') || true
     if [[ -n "$line" ]]; then
       printf '%s\n' "$line"
       return 0

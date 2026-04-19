@@ -5,7 +5,7 @@ _SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=tmux-cursor-submit-resolve.sh
 source "${_SCRIPT_DIR}/tmux-cursor-submit-resolve.sh"
 
-echo "=== Terminal detection (for tmux-talker / Cursor submit) ==="
+echo "=== Terminal detection (for tmux-send / Cursor submit) ==="
 echo "TERM_PROGRAM=${TERM_PROGRAM:-<unset>}"
 echo "TERM=${TERM:-<unset>}"
 echo "GHOSTTY_RESOURCES_DIR=${GHOSTTY_RESOURCES_DIR:-<unset>}"

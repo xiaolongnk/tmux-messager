@@ -95,43 +95,47 @@ record_dispatch() {
   fi
 }
 
-# Find all cursor panes in current window. Returns "idx:title" per line.
-# Priority: session config file → title matching fallback.
+# Find all cursor panes session-wide. Returns "window_idx:pane_idx:pane_id:title" per line.
+# Priority: pane_id from session config (cross-window stable) → title scan across all windows.
 find_cursor_panes() {
-  # 1. Check session config (sessions/<session-name>.conf → cursor_panes=3,4)
+  # 1. pane_id from session config — window-agnostic, always preferred.
   if [[ -x "$SESSION_CONFIG" ]]; then
-    local config_panes
-    config_panes=$("$SESSION_CONFIG" get cursor 2>/dev/null) || config_panes=""
-    if [[ -n "$config_panes" ]]; then
-      IFS=',' read -ra _panes <<< "$config_panes"
-      for idx in "${_panes[@]}"; do
-        idx="${idx// /}"  # trim spaces
-        [[ -n "$idx" ]] || continue
-        echo "${idx}:config"
-      done
-      return
+    local cpid
+    cpid=$("$SESSION_CONFIG" get-pane-id cursor 2>/dev/null) || cpid=""
+    if [[ "$cpid" =~ ^%[0-9]+$ ]]; then
+      local cw cp ctitle
+      cw=$(tmux display-message -t "$cpid" -p '#{window_index}' 2>/dev/null) || cw=""
+      cp=$(tmux display-message -t "$cpid" -p '#{pane_index}' 2>/dev/null) || cp=""
+      ctitle=$(tmux display-message -t "$cpid" -p '#{pane_title}' 2>/dev/null) || ctitle="config"
+      [[ -n "$cw" && -n "$cp" ]] && echo "${cw}:${cp}:${cpid}:${ctitle}" && return
     fi
   fi
 
-  # 2. Fallback: title matching (Cursor Agent, cursor-*, Cursor <topic>).
-  while IFS= read -r idx; do
-    local title
-    title=$(tmux display-message -t "${S}:${W}.${idx}" -p '#{pane_title}' 2>/dev/null) || continue
-    if [[ "$title" =~ ^[Cc]ursor[\ \-] || "$title" == "Cursor Agent" || "$title" == "cursor" ]]; then
-      echo "${idx}:${title}"
+  # 2. Fallback: title scan across all windows in session.
+  while IFS= read -r raw; do
+    local fidx fwidx fpid ftitle fcmd
+    fwidx=$(echo "$raw" | cut -d'|' -f1)
+    fidx=$(echo "$raw"  | cut -d'|' -f2)
+    fpid=$(echo "$raw"  | cut -d'|' -f3)
+    ftitle=$(echo "$raw"| cut -d'|' -f4)
+    fcmd=$(echo "$raw"  | cut -d'|' -f5)
+    if [[ "$ftitle" =~ ^[Cc]ursor[\ \-] || "$ftitle" == "Cursor Agent" || "$fcmd" == "cursor" ]]; then
+      echo "${fwidx}:${fidx}:${fpid}:${ftitle}"
     fi
-  done < <(tmux list-panes -t "${S}:${W}" -F '#{pane_index}' 2>/dev/null)
+  done < <(tmux list-panes -s -t "$S" \
+    -F '#{window_index}|#{pane_index}|#{pane_id}|#{pane_title}|#{pane_current_command}' \
+    2>/dev/null)
 }
 
 # Check status of all cursors and print.
 do_status() {
   local found=0
-  while IFS=: read -r idx title; do
-    [[ -n "$idx" ]] || continue
+  while IFS=: read -r cw cidx cpid ctitle; do
+    [[ -n "$cidx" ]] || continue
     local state
-    state=$("$BUSY_CHECK" . . "$idx" 2>/dev/null || echo "unknown")
+    state=$("$BUSY_CHECK" "$S" "$cw" "$cidx" 2>/dev/null || echo "unknown")
     local last_used
-    last_used=$(get_last_used "$idx")
+    last_used=$(get_last_used "$cpid")
     local last_str=""
     if [[ "$last_used" != "0" && -n "$last_used" ]]; then
       local now
@@ -140,9 +144,9 @@ do_status() {
       last_str=" (last used ${ago}s ago)"
     fi
     if [[ "$DO_JSON" -eq 1 ]]; then
-      echo "{\"pane\":$idx,\"title\":\"$title\",\"state\":\"$state\",\"last_used\":${last_used:-0}}"
+      echo "{\"pane\":$cidx,\"window\":$cw,\"pane_id\":\"$cpid\",\"title\":\"$ctitle\",\"state\":\"$state\",\"last_used\":${last_used:-0}}"
     else
-      printf "  pane %s: %-12s  state=%-8s%s\n" "$idx" "$title" "$state" "$last_str"
+      printf "  pane %s (win %s, %s): %-12s  state=%-8s%s\n" "$cidx" "$cw" "$cpid" "$ctitle" "$state" "$last_str"
     fi
     found=1
   done < <(find_cursor_panes)
@@ -156,25 +160,25 @@ do_status() {
   fi
 }
 
-# Find the best idle cursor pane. Returns pane index or empty.
+# Find the best idle cursor pane. Returns "window_idx:pane_idx:pane_id" or empty.
 find_idle_cursor() {
-  local best_pane="" best_time=""
-  while IFS=: read -r idx title; do
-    [[ -n "$idx" ]] || continue
+  local best_key="" best_time=""
+  while IFS=: read -r cw cidx cpid ctitle; do
+    [[ -n "$cidx" ]] || continue
     local state
-    state=$("$BUSY_CHECK" . . "$idx" 2>/dev/null || echo "unknown")
+    state=$("$BUSY_CHECK" "$S" "$cw" "$cidx" 2>/dev/null || echo "unknown")
     if [[ "$state" == "idle" ]]; then
       local last_used
-      last_used=$(get_last_used "$idx")
+      last_used=$(get_last_used "$cpid")
       last_used="${last_used:-0}"
       # Pick least recently used.
       if [[ -z "$best_time" || "$last_used" -lt "$best_time" ]]; then
-        best_pane="$idx"
+        best_key="${cw}:${cidx}:${cpid}"
         best_time="$last_used"
       fi
     fi
   done < <(find_cursor_panes)
-  echo "$best_pane"
+  echo "$best_key"
 }
 
 # Main dispatch logic.
@@ -188,10 +192,17 @@ if [[ ${#MESSAGE[@]} -eq 0 && -z "$FORCE_TARGET" ]]; then
   exit 3
 fi
 
-# Force target mode — skip busy check.
+# Force target mode — skip busy check. Resolve window from pane_id if it's a pane_id.
 if [[ -n "$FORCE_TARGET" ]]; then
   echo "dispatching to forced target pane $FORCE_TARGET" >&2
-  "$SEND" "$W" "$FORCE_TARGET" cursor "${MESSAGE[*]}"
+  if [[ "$FORCE_TARGET" =~ ^%[0-9]+$ ]]; then
+    _ft_w=$(tmux display-message -t "$FORCE_TARGET" -p '#{window_index}' 2>/dev/null) || _ft_w="$W"
+    _ft_p=$(tmux display-message -t "$FORCE_TARGET" -p '#{pane_index}' 2>/dev/null) || _ft_p=""
+    [[ -n "$_ft_p" ]] && "$SEND" "$_ft_w" "$_ft_p" cursor "${MESSAGE[*]}" || \
+      { echo "error: could not resolve forced pane_id $FORCE_TARGET" >&2; exit 1; }
+  else
+    "$SEND" "$W" "$FORCE_TARGET" cursor "${MESSAGE[*]}"
+  fi
   record_dispatch "$FORCE_TARGET"
   exit 0
 fi
@@ -199,11 +210,12 @@ fi
 # Find an idle cursor, optionally waiting.
 deadline=$(( $(date +%s) + WAIT_SECONDS ))
 while true; do
-  pane=$(find_idle_cursor)
-  if [[ -n "$pane" ]]; then
-    echo "dispatching to pane $pane (idle)" >&2
-    "$SEND" "$W" "$pane" cursor "${MESSAGE[*]}"
-    record_dispatch "$pane"
+  result=$(find_idle_cursor)
+  if [[ -n "$result" ]]; then
+    IFS=: read -r _cw _cidx _cpid <<< "$result"
+    echo "dispatching to pane ${_cidx} (win=${_cw}, id=${_cpid}, idle)" >&2
+    "$SEND" "$_cw" "$_cidx" cursor "${MESSAGE[*]}"
+    record_dispatch "$_cpid"
     exit 0
   fi
 

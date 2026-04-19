@@ -28,7 +28,7 @@ fi
 # ── Step 1: auto-clean stale files ──────────────────────────────────────────
 cleaned=0
 
-for f in $(ls /tmp/claude-pane-* 2>/dev/null); do
+for f in /tmp/claude-pane-*; do
   [[ -f "$f" ]] || continue
   fname="$(basename "$f")"
 
@@ -40,7 +40,7 @@ for f in $(ls /tmp/claude-pane-* 2>/dev/null); do
     if ! tmux display-message -t "$pane_id" -p '#{pane_id}' &>/dev/null; then
       rm -f "$f"
       echo "cleaned stale tmux-pane file: ${f} (pane ${pane_id} no longer exists)"
-      ((cleaned++)) || true
+      cleaned=$(( cleaned + 1 ))
     fi
 
   elif [[ "$fname" =~ ^claude-pane-([0-9]+)$ ]]; then
@@ -49,7 +49,7 @@ for f in $(ls /tmp/claude-pane-* 2>/dev/null); do
     if ! kill -0 "$pid" 2>/dev/null; then
       rm -f "$f"
       echo "cleaned stale PID file: ${f} (pid ${pid} not alive)"
-      ((cleaned++)) || true
+      cleaned=$(( cleaned + 1 ))
     fi
   fi
 done

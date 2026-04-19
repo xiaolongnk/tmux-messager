@@ -22,7 +22,8 @@
 set -euo pipefail
 
 _SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-_SESSIONS_DIR="${_SCRIPT_DIR}/../sessions"
+_SESSIONS_DIR="/tmp/claude-tmux-sessions"
+mkdir -p "$_SESSIONS_DIR"
 
 # Resolve current session name (works inside or outside tmux).
 _session() {
@@ -42,7 +43,7 @@ _read_key() {
   local file="$1"
   local key="$2"
   [[ -f "$file" ]] || return 0
-  grep -E "^${key}=" "$file" 2>/dev/null | head -1 | cut -d= -f2- || true
+  grep -F "${key}=" "$file" 2>/dev/null | awk -F= -v k="$key" '$1==k { print substr($0, length($1)+2); exit }' || true
 }
 
 _role_key() {
@@ -80,17 +81,17 @@ case "$CMD" in
     role="${1:-}"; shift || true
     [[ -n "$role" ]] || { echo "usage: set <role> <pane...>" >&2; exit 1; }
     [[ $# -ge 1 ]] || { echo "usage: set <role> <pane...>" >&2; exit 1; }
-    session="${SESSION_NAME:-$(_session)}"
+    session="${CLAUDE_TMUX_SESSION_NAME:-$(_session)}"
     cfg=$(_config_path "$session")
     key=$(_role_key "$role")
     val=$(IFS=,; echo "$*")
 
     mkdir -p "$(dirname "$cfg")"
 
-    if [[ -f "$cfg" ]] && grep -qE "^${key}=" "$cfg" 2>/dev/null; then
-      # Update existing line (BSD + GNU sed compatible via tmp file).
+    if [[ -f "$cfg" ]] && grep -qF "${key}=" "$cfg" 2>/dev/null && awk -F= -v k="$key" '$1==k{found=1;exit} END{exit !found}' "$cfg" 2>/dev/null; then
+      # Update existing line using awk (safe against | in val).
       tmp=$(mktemp)
-      sed "s|^${key}=.*|${key}=${val}|" "$cfg" > "$tmp" && mv "$tmp" "$cfg"
+      awk -F= -v k="$key" -v v="$val" 'BEGIN{OFS="="} $1==k{$2=v; print k"="v; next} 1' "$cfg" > "$tmp" && mv "$tmp" "$cfg"
     else
       # Append new entry.
       echo "${key}=${val}" >> "$cfg"
@@ -105,13 +106,13 @@ case "$CMD" in
     addr="${1:-}"; shift || true
     [[ -n "$role" ]] || { echo "usage: set-addr <role> <session:window:pane>" >&2; exit 1; }
     [[ -n "$addr" ]] || { echo "usage: set-addr <role> <session:window:pane>" >&2; exit 1; }
-    session="${SESSION_NAME:-$(_session)}"
+    session="${CLAUDE_TMUX_SESSION_NAME:-$(_session)}"
     cfg=$(_config_path "$session")
     key="${role}_addr"
     mkdir -p "$(dirname "$cfg")"
-    if [[ -f "$cfg" ]] && grep -qE "^${key}=" "$cfg" 2>/dev/null; then
+    if [[ -f "$cfg" ]] && awk -F= -v k="$key" '$1==k{found=1;exit} END{exit !found}' "$cfg" 2>/dev/null; then
       tmp=$(mktemp)
-      sed "s|^${key}=.*|${key}=${addr}|" "$cfg" > "$tmp" && mv "$tmp" "$cfg"
+      awk -F= -v k="$key" -v v="$addr" '$1==k{print k"="v; next} 1' "$cfg" > "$tmp" && mv "$tmp" "$cfg"
     else
       echo "${key}=${addr}" >> "$cfg"
     fi
@@ -134,13 +135,13 @@ case "$CMD" in
     pane_id="${1:-}"; shift || true
     [[ -n "$role" ]] || { echo "usage: set-pane-id <role> <pane_id>" >&2; exit 1; }
     [[ -n "$pane_id" ]] || { echo "usage: set-pane-id <role> <pane_id>" >&2; exit 1; }
-    session="${SESSION_NAME:-$(_session)}"
+    session="${CLAUDE_TMUX_SESSION_NAME:-$(_session)}"
     cfg=$(_config_path "$session")
     key="${role}_pane_id"
     mkdir -p "$(dirname "$cfg")"
-    if [[ -f "$cfg" ]] && grep -qE "^${key}=" "$cfg" 2>/dev/null; then
+    if [[ -f "$cfg" ]] && awk -F= -v k="$key" '$1==k{found=1;exit} END{exit !found}' "$cfg" 2>/dev/null; then
       tmp=$(mktemp)
-      sed "s|^${key}=.*|${key}=${pane_id}|" "$cfg" > "$tmp" && mv "$tmp" "$cfg"
+      awk -F= -v k="$key" -v v="$pane_id" '$1==k{print k"="v; next} 1' "$cfg" > "$tmp" && mv "$tmp" "$cfg"
     else
       echo "${key}=${pane_id}" >> "$cfg"
     fi

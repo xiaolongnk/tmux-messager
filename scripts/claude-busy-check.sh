@@ -41,7 +41,8 @@ SESSION="$1"
 WINDOW="$2"
 PANE="$3"
 
-read -r SESSION WINDOW <<< "$(_expand_session_window "$SESSION" "$WINDOW")"
+_sw=$(_expand_session_window "$SESSION" "$WINDOW") || { echo "unknown"; exit 2; }
+read -r SESSION WINDOW <<< "$_sw"
 TARGET="${SESSION}:${WINDOW}.${PANE}"
 
 # Capture last 30 lines — enough to see bottom prompt + recent output.
@@ -73,8 +74,8 @@ fi
 
 # --- Idle detection ---
 
-# Claude Code input prompt: "> " at start of line.
-if echo "$OUTPUT" | grep -qE '^> ?$|^>\s'; then
+# Claude Code input prompt: "> " or "❯ " at start of line (last 3 lines only to avoid false-idle).
+if tail -3 <<< "$OUTPUT" | grep -qE '^[❯>] ?$'; then
   echo "idle"; exit 0
 fi
 

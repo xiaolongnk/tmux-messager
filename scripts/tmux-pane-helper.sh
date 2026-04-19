@@ -191,8 +191,9 @@ inventory() {
   echo "Derived labels (self column * = this tmux client pane, excluded from resolve unless --include-self):"
   local tmp cand
   tmp=$(mktemp)
-  tmux list-panes -t "$session:$window" -F '#{pane_index} #{pane_left} #{pane_top}' >"$tmp"
   cand=$(mktemp)
+  trap 'rm -f "$tmp" "$cand"' EXIT
+  tmux list-panes -t "$session:$window" -F '#{pane_index} #{pane_left} #{pane_top}' >"$tmp"
   if [[ -n "$excl" ]]; then
     awk -v ex="$excl" '$1 != ex {print}' "$tmp" >"$cand"
   else
@@ -229,6 +230,7 @@ inventory() {
     }
   ' "$tmp"
   rm -f "$tmp" "$cand"
+  trap - EXIT
 }
 
 # Scan all windows in session; exclude only the invoking client's pane (same as resolve self-exclude).
@@ -280,8 +282,8 @@ find_kw_session_all() {
   local session="$1" keyword="$2"
   [[ -n "$keyword" ]] || { echo "error: empty keyword" >&2; return 1; }
 
-  local csw cwi cpi wi wn idx t c found=0
-  csw=""; cwi=""; cpi=""
+  local csw cwi cpi wi wn idx t c found=0 emitted_panes
+  csw=""; cwi=""; cpi=""; emitted_panes=""
   if [[ -n "${TMUX:-}" ]]; then
     csw=$(tmux display-message -p '#{session_name}' 2>/dev/null) || true
     cwi=$(tmux display-message -p '#{window_index}' 2>/dev/null) || true
@@ -296,6 +298,7 @@ find_kw_session_all() {
       if printf '%s\n%s\n' "$t" "$c" | grep -qiF "$keyword"; then
         echo "match=title_or_command window=${wi}(${wn}) pane=${idx}" >&2
         printf '%s:%s.%s\n' "$session" "$wn" "$idx"
+        emitted_panes="${emitted_panes} ${wi}.${idx}"
         found=1
       fi
     done < <(tmux list-panes -t "$session:$wi" -F '#{pane_index}' 2>/dev/null)
@@ -304,6 +307,8 @@ find_kw_session_all() {
   while IFS=$'\t' read -r wi wn; do
     while IFS= read -r idx; do
       [[ "$csw" == "$session" && "$wi" == "$cwi" && "$idx" == "$cpi" ]] && continue
+      # Skip panes already emitted by the title/command pass above.
+      printf '%s' " $emitted_panes " | grep -qF " ${wi}.${idx} " && continue
       if tmux capture-pane -t "$session:${wi}.${idx}" -p -S -8000 2>/dev/null | grep -qiF "$keyword"; then
         echo "match=capture window=${wi}(${wn}) pane=${idx}" >&2
         printf '%s:%s.%s\n' "$session" "$wn" "$idx"
@@ -423,9 +428,12 @@ resolve_one() {
 
   local alltmp tmp
   alltmp=$(mktemp)
+  tmp=""
+  trap 'rm -f "$alltmp" "$tmp"' EXIT
   if ! tmux list-panes -t "$session:$window" -F '#{pane_index} #{pane_left} #{pane_top}' >"$alltmp" 2>/dev/null; then
     echo "error: no panes for $session:$window" >&2
-    rm -f "$alltmp"
+    rm -f "$alltmp"; alltmp=""
+    trap - EXIT
     return 1
   fi
 
@@ -467,6 +475,7 @@ resolve_one() {
       alltmp=""
       if [[ ! -s "$tmp" ]]; then
         echo "error: no candidate panes after excluding self (use --include-self or another window)" >&2
+        trap - EXIT
         rm -f "$tmp"
         return 1
       fi
@@ -487,14 +496,15 @@ resolve_one() {
     fifth|nth-5) out=$(reading_nth 5) ;;
     nth-*)
       local k="${sel#nth-}"
-      [[ "$k" =~ ^[0-9]+$ ]] || { echo "bad nth" >&2; rm -f "$tmp"; return 1; }
+      [[ "$k" =~ ^[0-9]+$ ]] || { echo "bad nth" >&2; trap - EXIT; rm -f "$tmp"; return 1; }
       out=$(reading_nth "$k")
       ;;
     index-*)
       local k="${sel#index-}"
-      [[ "$k" =~ ^[0-9]+$ ]] || { echo "bad index" >&2; rm -f "$tmp"; return 1; }
+      [[ "$k" =~ ^[0-9]+$ ]] || { echo "bad index" >&2; trap - EXIT; rm -f "$tmp"; return 1; }
       if ! grep -q "^${k} " "$tmp"; then
         echo "error: pane_index $k not in window" >&2
+        trap - EXIT
         rm -f "$tmp"
         return 1
       fi
@@ -574,11 +584,13 @@ resolve_one() {
       ;;
     *)
       echo "error: unknown selector '$sel'" >&2
+      trap - EXIT
       rm -f "$tmp"
       return 1
       ;;
   esac
 
+  trap - EXIT
   rm -f "$tmp"
   [[ -n "$out" ]] || { echo "error: empty resolve result (not enough panes after exclude?)" >&2; return 1; }
   printf '%s\n' "$out"

@@ -6,10 +6,10 @@ set -euo pipefail
 usage() {
   cat <<'EOF'
 Usage:
-  tmux-target-send.sh [options] <window> <shell|claude|cursor|gemini> <message...>
-  tmux-target-send.sh [options] <window> <pane_index> <shell|claude|cursor|gemini> <message...>
-  tmux-target-send.sh [options] . <shell|claude|cursor|gemini> <message...>
-  tmux-target-send.sh [options] . <pane_index> <shell|claude|cursor|gemini> <message...>
+  tmux-target-send.sh [options] <window> <shell|claude|claude-glm|claude-glm2|cursor|gemini> <message...>
+  tmux-target-send.sh [options] <window> <pane_index> <shell|claude|claude-glm|claude-glm2|cursor|gemini> <message...>
+  tmux-target-send.sh [options] . <shell|claude|claude-glm|claude-glm2|cursor|gemini> <message...>
+  tmux-target-send.sh [options] . <pane_index> <shell|claude|claude-glm|claude-glm2|cursor|gemini> <message...>
 
   <window>     tmux window name, status-bar window index (e.g. 5), or **.** = current window
                (#{window_index} of the attached client — do not assume a fixed tab name).
@@ -94,7 +94,9 @@ while [[ $# -gt 0 ]]; do
     --enter) CURSOR_SUBMIT=enter; shift ;;
     --wait)
       [[ $# -ge 2 ]] || usage
-      CLAUDE_WAIT_SECONDS="$2"; shift 2 ;;
+      CLAUDE_WAIT_SECONDS="$2"; shift 2
+      [[ "$CLAUDE_WAIT_SECONDS" =~ ^[0-9]+$ ]] || { echo "error: --wait requires a non-negative integer" >&2; exit 1; }
+      ;;
     -h | --help | help) usage ;;
     *)
       break
@@ -132,7 +134,7 @@ if [[ -n "${_DIRECT_TARGET:-}" ]]; then
   S="$_dt_s"
   W="$_dt_w"
   P="$_dt_p"
-  if [[ $# -ge 1 && ( "$1" == cursor || "$1" == claude || "$1" == shell || "$1" == gemini ) ]]; then
+  if [[ $# -ge 1 && ( "$1" == cursor || "$1" == claude || "$1" == claude-glm || "$1" == claude-glm2 || "$1" == shell || "$1" == gemini ) ]]; then
     MODE="$1"; shift
   else
     MODE="claude"
@@ -141,11 +143,11 @@ if [[ -n "${_DIRECT_TARGET:-}" ]]; then
 elif [[ "${1:-}" == . ]]; then
   W=$(tmux display-message -p '#I' 2>/dev/null) || { echo "error: could not resolve current window (.)" >&2; exit 1; }
   shift
-  if [[ $# -ge 2 && "$1" =~ ^[0-9]+$ && ( "$2" == cursor || "$2" == claude || "$2" == shell || "$2" == gemini ) ]]; then
+  if [[ $# -ge 2 && "$1" =~ ^[0-9]+$ && ( "$2" == cursor || "$2" == claude || "$2" == claude-glm || "$2" == claude-glm2 || "$2" == shell || "$2" == gemini ) ]]; then
     P="$1"
     MODE="$2"
     shift 2
-  elif [[ $# -ge 1 && ( "$1" == cursor || "$1" == claude || "$1" == shell || "$1" == gemini ) ]]; then
+  elif [[ $# -ge 1 && ( "$1" == cursor || "$1" == claude || "$1" == claude-glm || "$1" == claude-glm2 || "$1" == shell || "$1" == gemini ) ]]; then
     MODE="$1"
     shift
   else
@@ -154,12 +156,12 @@ elif [[ "${1:-}" == . ]]; then
 else
   [[ $# -ge 3 ]] || usage
   # Prefer 3-token head (window + pane + mode) when $3 is the mode — avoids treating pane index as window name.
-  if [[ $# -ge 3 && ( "$3" == cursor || "$3" == claude || "$3" == shell || "$3" == gemini ) ]]; then
+  if [[ $# -ge 3 && ( "$3" == cursor || "$3" == claude || "$3" == claude-glm || "$3" == claude-glm2 || "$3" == shell || "$3" == gemini ) ]]; then
     W="$1"
     P="$2"
     MODE="$3"
     shift 3
-  elif [[ $# -ge 2 && ( "$2" == cursor || "$2" == claude || "$2" == shell || "$2" == gemini ) ]]; then
+  elif [[ $# -ge 2 && ( "$2" == cursor || "$2" == claude || "$2" == claude-glm || "$2" == claude-glm2 || "$2" == shell || "$2" == gemini ) ]]; then
     W="$1"
     MODE="$2"
     shift 2
@@ -168,7 +170,7 @@ else
   fi
 fi
 
-[[ -n "${*:-}" ]] || { echo "error: empty message" >&2; exit 1; }
+[[ $# -gt 0 && -n "$*" ]] || { echo "error: empty message" >&2; exit 1; }
 TEXT="$*"
 
 if [[ -z "$P" ]]; then
@@ -177,7 +179,8 @@ if [[ -z "$P" ]]; then
     _cursor_pane_id=$("$SESSION_CONFIG" get-pane-id cursor 2>/dev/null) || _cursor_pane_id=""
     if [[ "$_cursor_pane_id" =~ ^%[0-9]+$ ]]; then
       P=$(tmux display-message -t "${_cursor_pane_id}" -p '#{pane_index}' 2>/dev/null) || P=""
-      [[ -n "$P" ]] && echo "send-keys: cursor pane via pane_id ${_cursor_pane_id} (live) → index=${P}" >&2
+      W=$(tmux display-message -t "${_cursor_pane_id}" -p '#{window_index}' 2>/dev/null) || W=""
+      [[ -n "$P" ]] && echo "send-keys: cursor pane via pane_id ${_cursor_pane_id} (live) → window=${W} index=${P}" >&2
     fi
     # Fallback: content-based scan (used when pane_id not yet registered or pane gone).
     if [[ -z "$P" ]]; then
@@ -190,11 +193,23 @@ if [[ -z "$P" ]]; then
     _claude_pane_id=$("$SESSION_CONFIG" get-pane-id claude 2>/dev/null) || _claude_pane_id=""
     if [[ "$_claude_pane_id" =~ ^%[0-9]+$ ]]; then
       P=$(tmux display-message -t "${_claude_pane_id}" -p '#{pane_index}' 2>/dev/null) || P=""
-      [[ -n "$P" ]] && echo "send-keys: claude pane via pane_id ${_claude_pane_id} (live) → index=${P}" >&2
+      W=$(tmux display-message -t "${_claude_pane_id}" -p '#{window_index}' 2>/dev/null) || W=""
+      [[ -n "$P" ]] && echo "send-keys: claude pane via pane_id ${_claude_pane_id} (live) → window=${W} index=${P}" >&2
     fi
     # Fallback: active pane.
     if [[ -z "$P" ]]; then
       P=$("$HELPER" active-pane "$S" "$W") || { echo "error: active-pane in $S:$W" >&2; exit 1; }
+    fi
+  elif [[ ( "$MODE" == "claude-glm" || "$MODE" == "claude-glm2" ) && -x "$SESSION_CONFIG" ]]; then
+    # pane_id lookup for secondary claude instances (registered by tmux-register-all-panes.sh).
+    _glm_pane_id=$("$SESSION_CONFIG" get-pane-id "$MODE" 2>/dev/null) || _glm_pane_id=""
+    if [[ "$_glm_pane_id" =~ ^%[0-9]+$ ]]; then
+      P=$(tmux display-message -t "${_glm_pane_id}" -p '#{pane_index}' 2>/dev/null) || P=""
+      W=$(tmux display-message -t "${_glm_pane_id}" -p '#{window_index}' 2>/dev/null) || W=""
+      [[ -n "$P" ]] && echo "send-keys: ${MODE} pane via pane_id ${_glm_pane_id} (live) → window=${W} index=${P}" >&2
+    fi
+    if [[ -z "$P" ]]; then
+      echo "error: no pane registered for ${MODE} — run tmux-register-all-panes.sh" >&2; exit 1
     fi
   else
     P=$("$HELPER" active-pane "$S" "$W") || { echo "error: active-pane in $S:$W" >&2; exit 1; }
@@ -209,21 +224,10 @@ TARGET="${S}:${W}.${P}"
 # launch, $TMUX_PANE may point to a different pane index than where Claude is now.
 # The registered file (written by tmux-register-pane.sh) stores the explicit address and
 # is preferred when available.
-if [[ "$MODE" == "cursor" || "$MODE" == "gemini" || "$MODE" == "claude" ]]; then
-  # Self-heal: if registered file is missing or in legacy format, auto-register now.
-  # Only needed for TUI modes (cursor/gemini) that require stable pane_id registration.
-  if [[ "$MODE" == "cursor" || "$MODE" == "gemini" ]]; then
-    if [[ -n "${TMUX_PANE:-}" ]]; then
-      _heal_key="${TMUX_PANE//\%/p}"
-      _heal_file="/tmp/claude-pane-tmux-${_heal_key}"
-      _heal_val=""
-      [[ -f "$_heal_file" ]] && _heal_val=$(cat "$_heal_file" 2>/dev/null) || true
-      if [[ ! "$_heal_val" =~ ^%[0-9]+$ ]]; then
-        echo "send-keys: registration missing/stale — auto-registering" >&2
-        bash "${_SCRIPT_DIR}/tmux-ensure-registered.sh" >/dev/null 2>&1 || true
-      fi
-    fi
-  fi
+if [[ "$MODE" == "cursor" || "$MODE" == "gemini" || "$MODE" == "claude" || "$MODE" == "claude-glm" || "$MODE" == "claude-glm2" ]]; then
+  # Lazy session init: fingerprint-guarded (~5ms fast path when already registered).
+  # Auto-registers all agent panes on first invocation or after any pane add/remove.
+  bash "${_SCRIPT_DIR}/tmux-init.sh" >/dev/null || true
 
   SENDER_S=""
   SENDER_W=""
@@ -269,23 +273,31 @@ if [[ "$MODE" == "cursor" || "$MODE" == "gemini" || "$MODE" == "claude" ]]; then
       echo "send-keys: sender via session config get-addr → ${_claude_addr} (WARNING: may be stale — run tmux-register-pane.sh)" >&2
     fi
   fi
+  # Auto-suppress reply-to if message explicitly says so (prevents ack loops).
+  if printf '%s' "$TEXT" | LC_ALL=C grep -qi "no reply needed"; then _NO_REPLY=1; fi
   if [[ -n "$SENDER_S" && -n "$SENDER_W" && -n "$SENDER_P" && "$_NO_REPLY" -eq 0 ]]; then
     # Determine correct reply mode: match sender's pane role so receiver uses the right submit key.
     _reply_mode="claude"
     if [[ -n "${TMUX_PANE:-}" && -x "$SESSION_CONFIG" ]]; then
       _cursor_pane_id_chk=$("$SESSION_CONFIG" get-pane-id cursor 2>/dev/null) || _cursor_pane_id_chk=""
       _gemini_pane_id_chk=$("$SESSION_CONFIG" get-pane-id gemini 2>/dev/null) || _gemini_pane_id_chk=""
+      _glm_pane_id_chk=$("$SESSION_CONFIG" get-pane-id claude-glm 2>/dev/null) || _glm_pane_id_chk=""
+      _glm2_pane_id_chk=$("$SESSION_CONFIG" get-pane-id claude-glm2 2>/dev/null) || _glm2_pane_id_chk=""
       if [[ -n "$_cursor_pane_id_chk" && "$TMUX_PANE" == "$_cursor_pane_id_chk" ]]; then
         _reply_mode="cursor"
       elif [[ -n "$_gemini_pane_id_chk" && "$TMUX_PANE" == "$_gemini_pane_id_chk" ]]; then
         _reply_mode="gemini"
+      elif [[ -n "$_glm_pane_id_chk" && "$TMUX_PANE" == "$_glm_pane_id_chk" ]]; then
+        _reply_mode="claude-glm"
+      elif [[ -n "$_glm2_pane_id_chk" && "$TMUX_PANE" == "$_glm2_pane_id_chk" ]]; then
+        _reply_mode="claude-glm2"
       fi
     fi
     TEXT="${TEXT}
 
 ---
 REQUIRED: After completing the task above, run this bash command in your terminal to send your reply back (do not just print it — execute it):
-  bash ./.claude/skills/tmux/scripts/tmux-target-send.sh --direct-target ${SENDER_S}:${SENDER_W}:${SENDER_P} ${_reply_mode} \"your reply here\"
+  bash /Users/rex/data/superX/.claude/skills/tmux/scripts/tmux-target-send.sh --direct-target "${SENDER_S}:${SENDER_W}:${SENDER_P}" ${_reply_mode} \"your reply here\"
 Replace \"your reply here\" with a concise summary of what you did."
   fi
 fi
@@ -397,7 +409,7 @@ case "$MODE" in
   cursor|gemini)
     _exit_copy_mode "$TARGET"
     cursor_send_submit "$CURSOR_SUBMIT" || exit 1 ;;
-  claude)
+  claude|claude-glm|claude-glm2)
     if [[ "$CLAUDE_WAIT_SECONDS" -gt 0 ]]; then
       _claude_wait_idle "$CLAUDE_WAIT_SECONDS"
     fi
