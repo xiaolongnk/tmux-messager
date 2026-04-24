@@ -169,19 +169,44 @@ if [[ -n "$LAYOUT_SPEC" ]]; then
   echo ""
 fi
 
+# ── Submit-key detection (runs at registration — never at send time) ──────────
+# Returns the tmux send-keys token that submits in this pane's TUI/shell.
+# Cursor always needs kitty-enter; Gemini always needs c-m.
+# For claude/shell roles, check the pane's current command: fish → kitty-enter, else c-m.
+_detect_submit_key() {
+  local role="$1" pane_id="$2"
+  case "$role" in
+    cursor|cursor-*) echo "kitty-enter"; return ;;
+    gemini)          echo "c-m";         return ;;
+  esac
+  local cmd
+  cmd=$(tmux display-message -t "$pane_id" -p '#{pane_current_command}' 2>/dev/null) || cmd=""
+  if [[ "$cmd" == "fish" ]]; then
+    echo "kitty-enter"
+  else
+    echo "c-m"
+  fi
+}
+
 # ── Registration helper ───────────────────────────────────────────────────────
 
 _register_pane() {
   local role="$1" pane_id="$2" window_idx="$3" pane_idx="$4" title="$5" source="$6"
   printf '  [%-6s]  %s pane_id=%s role=%s title='"'"'%s'"'"'\n' \
     "$source" "${SESSION}:${window_idx}.${pane_idx}" "$pane_id" "$role" "$title"
+  local submit_key
+  submit_key=$(_detect_submit_key "$role" "$pane_id")
   if [[ "$DRY_RUN" -eq 0 ]]; then
     bash "$SESSION_CONFIG" set-pane-id "$role" "$pane_id" 2>/dev/null \
       && echo "           → set-pane-id ${role}=${pane_id}" \
       || echo "           → WARNING: set-pane-id failed"
     bash "$SESSION_CONFIG" set-addr "$role" "${SESSION}:${window_idx}:${pane_idx}" 2>/dev/null || true
+    bash "$SESSION_CONFIG" set-submit-key "$role" "$submit_key" 2>/dev/null \
+      && echo "           → set-submit-key ${role}=${submit_key}" \
+      || echo "           → WARNING: set-submit-key failed"
   else
     echo "           → [dry-run] would set-pane-id ${role}=${pane_id}"
+    echo "           → [dry-run] would set-submit-key ${role}=${submit_key}"
   fi
   _mark_registered "$role"
 }

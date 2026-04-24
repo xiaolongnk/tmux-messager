@@ -320,27 +320,27 @@ cursor_send_submit() {
     enter | return | c-m | plain) tmux send-keys -t "$TARGET" "$TEXT" C-m ;;
     kitty-c-enter | csi-13-5 | xtermjs-c-enter)
       tmux send-keys -t "$TARGET" "$TEXT"
-      sleep 0.3
+      _adaptive_sleep "$TEXT"
       tmux send-keys -t "$TARGET" $'\e[13;5u'
       ;;
     kitty-enter | kitty-plain-enter | csi-13u)
       tmux send-keys -t "$TARGET" "$TEXT"
-      sleep 0.1
+      _adaptive_sleep "$TEXT"
       tmux send-keys -t "$TARGET" $'\e[13u'
       ;;
     kitty-enter1 | csi-13-1u)
       tmux send-keys -t "$TARGET" "$TEXT"
-      sleep 0.1
+      _adaptive_sleep "$TEXT"
       tmux send-keys -t "$TARGET" $'\e[13;1u'
       ;;
     kitty-ctrl4 | csi-13-4)
       tmux send-keys -t "$TARGET" "$TEXT"
-      sleep 0.1
+      _adaptive_sleep "$TEXT"
       tmux send-keys -t "$TARGET" $'\e[13;4u'
       ;;
     kitty-alt2 | csi-13-2)
       tmux send-keys -t "$TARGET" "$TEXT"
-      sleep 0.1
+      _adaptive_sleep "$TEXT"
       tmux send-keys -t "$TARGET" $'\e[13;2u'
       ;;
     *)
@@ -383,6 +383,25 @@ _exit_copy_mode() {
   tmux send-keys -t "$1" -X cancel 2>/dev/null || true
 }
 
+# Adaptive sleep between text send and submit key:
+# long messages (>200 chars) get 0.3s so the TUI finishes rendering before the key arrives.
+_adaptive_sleep() {
+  local len="${#1}"
+  if [[ "$len" -gt 200 ]]; then
+    sleep 0.3
+  else
+    sleep 0.1
+  fi
+}
+
+# Look up the stored submit key for a role from the session config.
+# Returns the stored value (kitty-enter, c-m, c-enter, …) or empty string if not set.
+_lookup_submit_key() {
+  local role="$1"
+  [[ -x "$SESSION_CONFIG" ]] || { echo ""; return 0; }
+  bash "$SESSION_CONFIG" get-submit-key "$role" 2>/dev/null || echo ""
+}
+
 # Detect if target pane is running Fish shell (at the prompt or as login shell).
 # Fish + Ghostty/kitty terminals require ESC[13u (kitty-enter) instead of C-m for submit.
 # Detection order:
@@ -406,33 +425,57 @@ _is_fish_target() {
 }
 
 case "$MODE" in
-  cursor|gemini)
+  cursor)
     _exit_copy_mode "$TARGET"
     cursor_send_submit "$CURSOR_SUBMIT" || exit 1 ;;
+  gemini)
+    # Gemini CLI treats ESC[13u (kitty-enter) as newline, not submit — plain Enter (C-m) submits.
+    # This is the opposite of Cursor/Claude TUIs. Do NOT share cursor's submit resolution here.
+    _exit_copy_mode "$TARGET"
+    tmux send-keys -t "$TARGET" "$TEXT"
+    _adaptive_sleep "$TEXT"
+    tmux send-keys -t "$TARGET" C-m ;;
   claude|claude-glm|claude-glm2)
     if [[ "$CLAUDE_WAIT_SECONDS" -gt 0 ]]; then
       _claude_wait_idle "$CLAUDE_WAIT_SECONDS"
     fi
     _exit_copy_mode "$TARGET"
     tmux send-keys -t "$TARGET" "$TEXT"
-    sleep 0.1
-    if _is_fish_target; then
+    _adaptive_sleep "$TEXT"
+    # Prefer stored submit key (set at registration time, stable).
+    # Fall back to runtime fish detection when no stored key exists (e.g. first run).
+    _stored_key=$(_lookup_submit_key "$MODE")
+    if [[ "$_stored_key" == "kitty-enter" ]]; then
+      echo "send-keys: kitty-enter from stored profile (${MODE})" >&2
+      tmux send-keys -t "$TARGET" $'\e[13u'
+    elif [[ -n "$_stored_key" ]]; then
+      tmux send-keys -t "$TARGET" C-m
+    elif _is_fish_target; then
       # Fish + Ghostty/kitty: C-m does not submit in Claude Code / agent TUIs.
       # ESC[13u (kitty-enter) is required — same key that cursor mode uses.
-      echo "send-keys: Fish shell detected → using kitty-enter (ESC[13u) instead of C-m" >&2
+      echo "send-keys: Fish shell detected via runtime check → using kitty-enter" >&2
       tmux send-keys -t "$TARGET" $'\e[13u'
     else
       tmux send-keys -t "$TARGET" C-m
     fi
     ;;
   shell)
-    if _is_fish_target; then
-      echo "send-keys: Fish shell detected → using kitty-enter (ESC[13u) instead of C-m" >&2
-      tmux send-keys -t "$TARGET" "$TEXT"
-      sleep 0.1
+    _exit_copy_mode "$TARGET"
+    tmux send-keys -t "$TARGET" "$TEXT"
+    # Prefer stored submit key; fall back to runtime fish detection.
+    _stored_key=$(_lookup_submit_key shell)
+    if [[ "$_stored_key" == "kitty-enter" ]]; then
+      echo "send-keys: kitty-enter from stored profile (shell)" >&2
+      _adaptive_sleep "$TEXT"
+      tmux send-keys -t "$TARGET" $'\e[13u'
+    elif [[ -n "$_stored_key" ]]; then
+      tmux send-keys -t "$TARGET" C-m
+    elif _is_fish_target; then
+      echo "send-keys: Fish shell detected via runtime check → using kitty-enter" >&2
+      _adaptive_sleep "$TEXT"
       tmux send-keys -t "$TARGET" $'\e[13u'
     else
-      tmux send-keys -t "$TARGET" "$TEXT" C-m
+      tmux send-keys -t "$TARGET" C-m
     fi
     ;;
   *) usage ;;

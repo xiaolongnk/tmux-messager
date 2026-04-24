@@ -4,6 +4,23 @@ All notable changes to tmux-messager are documented here.
 
 ## [Unreleased]
 
+### Added — Cached submit keys + adaptive send delay + work-window dispatch (2026-04-24)
+
+**Submit-key caching at registration time** (`tmux-register-pane.sh`, `tmux-session-config.sh`):
+- When a Claude pane registers, its submit key (`kitty-enter` for Fish, `c-m` otherwise) is detected once and stored in the session config via a new `set-submit-key` / `get-submit-key` API.
+- Send scripts look up the stored key per role instead of re-detecting at runtime — eliminates per-send terminal probes and removes a class of races when the pane's current command isn't `fish` (e.g. inside a long-running TUI).
+
+**Adaptive send delay** (`tmux-target-send.sh`):
+- New `_adaptive_sleep` between text send and submit key: 0.1 s for short messages, **0.3 s for >200 chars**.
+- Long prompts no longer race the TUI's render loop — fixes intermittent dropped submits on large pasted briefs.
+
+**Bulk pane registration** (`tmux-register-all-panes.sh`):
+- Iterates over every pane in the current session and registers each with detected role + submit key — one-shot setup after splitting a window.
+
+**New: work-window scripts** (`work-window-setup.sh`, `work-dispatch.sh`):
+- `work-window-setup.sh`: create a named tmux work window with N worker panes (each running a chosen agent CLI).
+- `work-dispatch.sh`: multi-instance-safe LRU dispatcher — picks an idle worker pane in a named work window and sends the task with the correct submit key. Safe under concurrent dispatchers via a pointer file with `flock`.
+
 ### Added — Fish shell support (2026-04-16)
 
 `tmux-target-send.sh` now correctly submits messages in Fish shell environments.

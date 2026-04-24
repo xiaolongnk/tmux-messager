@@ -64,6 +64,18 @@ bash "$SESSION_CONFIG" set-pane-id claude "${TMUX_PANE}" 2>/dev/null \
   && echo "claude pane_id=${TMUX_PANE} → session config (layout-stable)" \
   || echo "warning: could not write claude pane_id to session config"
 
+# Detect and store submit key for this Claude pane.
+# Done at registration (pane at prompt) so send scripts never re-detect at runtime.
+_claude_cmd=$(tmux display-message -t "${TMUX_PANE}" -p '#{pane_current_command}' 2>/dev/null) || _claude_cmd=""
+if [[ "$_claude_cmd" == "fish" ]]; then
+  _claude_submit_key="kitty-enter"
+else
+  _claude_submit_key="c-m"
+fi
+bash "$SESSION_CONFIG" set-submit-key claude "$_claude_submit_key" 2>/dev/null \
+  && echo "claude submit_key=${_claude_submit_key} → session config" \
+  || echo "warning: could not write claude submit_key to session config"
+
 # ── Auto-locate Cursor panes in the current window ─────────────────────────
 # Scan all panes by title (cursor-*, Cursor *, Cursor Agent) and by command
 # (node/cursor), then register them in the session config so cursor-dispatch.sh

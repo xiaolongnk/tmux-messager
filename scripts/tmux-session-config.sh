@@ -157,6 +157,36 @@ case "$CMD" in
     _read_key "$cfg" "${role}_pane_id"
     ;;
 
+  set-submit-key)
+    # Store the submit key for a role (kitty-enter, c-m, c-enter, …).
+    # Set at registration time so send scripts never re-detect at runtime.
+    # Usage: tmux-session-config.sh set-submit-key <role> <key>
+    role="${1:-}"; shift || true
+    key="${1:-}";  shift || true
+    [[ -n "$role" ]] || { echo "usage: set-submit-key <role> <key>" >&2; exit 1; }
+    [[ -n "$key"  ]] || { echo "usage: set-submit-key <role> <key>" >&2; exit 1; }
+    session="${CLAUDE_TMUX_SESSION_NAME:-$(_session)}"
+    cfg=$(_config_path "$session")
+    skey="${role}_submit_key"
+    mkdir -p "$(dirname "$cfg")"
+    if [[ -f "$cfg" ]] && awk -F= -v k="$skey" '$1==k{found=1;exit} END{exit !found}' "$cfg" 2>/dev/null; then
+      tmp=$(mktemp)
+      awk -F= -v k="$skey" -v v="$key" '$1==k{print k"="v; next} 1' "$cfg" > "$tmp" && mv "$tmp" "$cfg"
+    else
+      echo "${skey}=${key}" >> "$cfg"
+    fi
+    echo "set-submit-key ${role} → ${key} in ${cfg}" >&2
+    ;;
+
+  get-submit-key)
+    # Retrieve the stored submit key for a role, or empty string if not set.
+    # Usage: tmux-session-config.sh get-submit-key <role> [session]
+    role="${1:-}"
+    session="${2:-$(_session)}"
+    cfg=$(_config_path "$session")
+    _read_key "$cfg" "${role}_submit_key"
+    ;;
+
   show)
     session="${1:-$(_session)}"
     cfg=$(_config_path "$session")
