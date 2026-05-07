@@ -210,7 +210,11 @@ case "$CMD" in
     # Usage: tmux-session-config.sh find-cursor [session [window]]
     # Prints one pane index per line. Exits 0 if any found, 1 if none.
     session="${1:-$(_session)}"
-    window="${2:-$(tmux display-message -p '#I' 2>/dev/null)}"
+    if [[ -n "${TMUX_PANE:-}" ]]; then
+      window="${2:-$(tmux display-message -t "${TMUX_PANE}" -p '#{window_index}' 2>/dev/null)}"
+    else
+      window="${2:-$(tmux display-message -p '#I' 2>/dev/null)}"
+    fi
     found=0
     while IFS= read -r p; do
       target="${session}:${window}.${p}"

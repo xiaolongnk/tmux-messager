@@ -21,6 +21,8 @@ Usage:
 Options (cursor submit only; shell/claude use C-m on zsh/bash or kitty-enter on Fish; claude supports --wait):
   --no-reply            Omit the REQUIRED reply-back instruction (use for ack/notification messages
                         to avoid infinite ack loops between agents).
+  --same-window         Fail if role-based dispatch resolves to a different window than the
+                        manager's own window (from \$TMUX_PANE). Default: warn only, proceed.
   --wait N              Before sending to a claude pane: poll up to N seconds for idle state.
                         Uses claude-busy-check.sh heuristics. Default: 0 (send immediately).
                         Do NOT use --wait for reply-to injections — Claude is already idle when Cursor replies.
@@ -65,10 +67,12 @@ CLAUDE_WAIT_SECONDS=0
 _COLLAB_SESSION=""
 _DIRECT_TARGET=""
 _NO_REPLY=0
+_SAME_WINDOW=0
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --no-reply) _NO_REPLY=1; shift ;;
+    --same-window) _SAME_WINDOW=1; shift ;;
     --direct-target)
       # Direct full address: session:window:pane — bypasses all positional W/P resolution.
       [[ $# -ge 2 ]] || usage
@@ -141,7 +145,14 @@ if [[ -n "${_DIRECT_TARGET:-}" ]]; then
   fi
 # `.` = current client's window index (never assume a fixed window name).
 elif [[ "${1:-}" == . ]]; then
-  W=$(tmux display-message -p '#I' 2>/dev/null) || { echo "error: could not resolve current window (.)" >&2; exit 1; }
+  # Use $TMUX_PANE (the calling pane's ID) to resolve the window, NOT the client's focused window.
+  # tmux display-message -p '#I' without -t returns the attached client's active window, which
+  # changes whenever the user switches tabs — causing cross-window targeting bugs.
+  if [[ -n "${TMUX_PANE:-}" ]]; then
+    W=$(tmux display-message -t "${TMUX_PANE}" -p '#{window_index}' 2>/dev/null) || { echo "error: could not resolve window from TMUX_PANE=${TMUX_PANE}" >&2; exit 1; }
+  else
+    W=$(tmux display-message -p '#I' 2>/dev/null) || { echo "error: could not resolve current window (.)" >&2; exit 1; }
+  fi
   shift
   if [[ $# -ge 2 && "$1" =~ ^[0-9]+$ && ( "$2" == cursor || "$2" == claude || "$2" == claude-glm || "$2" == claude-glm2 || "$2" == shell || "$2" == gemini ) ]]; then
     P="$1"
@@ -211,8 +222,34 @@ if [[ -z "$P" ]]; then
     if [[ -z "$P" ]]; then
       echo "error: no pane registered for ${MODE} — run tmux-register-all-panes.sh" >&2; exit 1
     fi
+  elif [[ "$MODE" == "gemini" && -x "$SESSION_CONFIG" ]]; then
+    # pane_id lookup for gemini — window-agnostic, same pattern as cursor/claude.
+    _gemini_pane_id=$("$SESSION_CONFIG" get-pane-id gemini 2>/dev/null) || _gemini_pane_id=""
+    if [[ "$_gemini_pane_id" =~ ^%[0-9]+$ ]]; then
+      P=$(tmux display-message -t "${_gemini_pane_id}" -p '#{pane_index}' 2>/dev/null) || P=""
+      W=$(tmux display-message -t "${_gemini_pane_id}" -p '#{window_index}' 2>/dev/null) || W=""
+      [[ -n "$P" ]] && echo "send-keys: gemini pane via pane_id ${_gemini_pane_id} (live) → window=${W} index=${P}" >&2
+    fi
+    if [[ -z "$P" ]]; then
+      echo "error: no pane registered for gemini — run tmux-register-all-panes.sh" >&2; exit 1
+    fi
   else
     P=$("$HELPER" active-pane "$S" "$W") || { echo "error: active-pane in $S:$W" >&2; exit 1; }
+  fi
+fi
+
+# Cross-window guard: warn (or fail with --same-window) when role-based lookup
+# resolved to a different window than the manager's own window.
+# Cross-window is intentional in multi-window agent networks (GLM in W3, gemini in W4)
+# but accidental cross-window means a stale registration — so always log it clearly.
+if [[ -n "${TMUX_PANE:-}" ]]; then
+  _manager_w=$(tmux display-message -t "${TMUX_PANE}" -p '#{window_index}' 2>/dev/null) || _manager_w=""
+  if [[ -n "$_manager_w" && -n "$W" && "$W" != "$_manager_w" ]]; then
+    echo "send-keys: CROSS-WINDOW: manager is in window ${_manager_w}, target '${MODE}' resolved to window ${W}" >&2
+    if [[ "${_SAME_WINDOW:-0}" -eq 1 ]]; then
+      echo "error: --same-window enforced — refusing cross-window dispatch (role='${MODE}' → window ${W}, manager → window ${_manager_w})" >&2
+      exit 1
+    fi
   fi
 fi
 
@@ -281,24 +318,17 @@ if [[ "$MODE" == "cursor" || "$MODE" == "gemini" || "$MODE" == "claude" || "$MOD
     if [[ -n "${TMUX_PANE:-}" && -x "$SESSION_CONFIG" ]]; then
       _cursor_pane_id_chk=$("$SESSION_CONFIG" get-pane-id cursor 2>/dev/null) || _cursor_pane_id_chk=""
       _gemini_pane_id_chk=$("$SESSION_CONFIG" get-pane-id gemini 2>/dev/null) || _gemini_pane_id_chk=""
-      _glm_pane_id_chk=$("$SESSION_CONFIG" get-pane-id claude-glm 2>/dev/null) || _glm_pane_id_chk=""
-      _glm2_pane_id_chk=$("$SESSION_CONFIG" get-pane-id claude-glm2 2>/dev/null) || _glm2_pane_id_chk=""
       if [[ -n "$_cursor_pane_id_chk" && "$TMUX_PANE" == "$_cursor_pane_id_chk" ]]; then
         _reply_mode="cursor"
       elif [[ -n "$_gemini_pane_id_chk" && "$TMUX_PANE" == "$_gemini_pane_id_chk" ]]; then
         _reply_mode="gemini"
-      elif [[ -n "$_glm_pane_id_chk" && "$TMUX_PANE" == "$_glm_pane_id_chk" ]]; then
-        _reply_mode="claude-glm"
-      elif [[ -n "$_glm2_pane_id_chk" && "$TMUX_PANE" == "$_glm2_pane_id_chk" ]]; then
-        _reply_mode="claude-glm2"
       fi
     fi
     TEXT="${TEXT}
 
 ---
-REQUIRED: After completing the task above, run this bash command in your terminal to send your reply back (do not just print it — execute it):
-  bash /Users/rex/data/superX/.claude/skills/tmux/scripts/tmux-target-send.sh --direct-target "${SENDER_S}:${SENDER_W}:${SENDER_P}" ${_reply_mode} \"your reply here\"
-Replace \"your reply here\" with a concise summary of what you did."
+ACK: when done, echo idle > /tmp/agent-status-pane-${P} then reply with ✓ done: <summary>:
+  bash ${_SCRIPT_DIR}/tmux-target-send.sh --direct-target "${SENDER_S}:${SENDER_W}:${SENDER_P}" ${_reply_mode} \"✓ done: your summary\""
   fi
 fi
 

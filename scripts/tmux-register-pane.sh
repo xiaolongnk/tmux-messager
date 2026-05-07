@@ -86,8 +86,8 @@ echo "scanning current window for Cursor panes..."
 _SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SESSION_CONFIG="${_SCRIPT_DIR}/tmux-session-config.sh"
 
-_current_session=$(tmux display-message -p '#{session_name}' 2>/dev/null) || _current_session=""
-_current_window=$(tmux display-message -p '#{window_index}' 2>/dev/null) || _current_window="$WIN"
+_current_session=$(tmux display-message -t "${TMUX_PANE}" -p '#{session_name}' 2>/dev/null) || _current_session=""
+_current_window=$(tmux display-message -t "${TMUX_PANE}" -p '#{window_index}' 2>/dev/null) || _current_window="$WIN"
 _my_pane="$PANE"
 
 _cursor_panes=()

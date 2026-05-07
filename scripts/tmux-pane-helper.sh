@@ -101,9 +101,18 @@ get_self_pane_index_in_target_window() {
   local session="$1" window="$2"
   [[ -n "${TMUX:-}" ]] || return 1
   local cs cw cp tw
-  cs=$(tmux display-message -p '#{session_name}' 2>/dev/null) || return 1
-  cw=$(tmux display-message -p '#{window_index}' 2>/dev/null) || return 1
-  cp=$(tmux display-message -p '#{pane_index}' 2>/dev/null) || return 1
+  # Use $TMUX_PANE (calling process's pane ID) to get the invoking pane's coordinates,
+  # NOT the client's focused pane. Without -t, tmux display-message returns the attached
+  # client's active pane — which changes when the user switches windows.
+  if [[ -n "${TMUX_PANE:-}" ]]; then
+    cs=$(tmux display-message -t "${TMUX_PANE}" -p '#{session_name}' 2>/dev/null) || return 1
+    cw=$(tmux display-message -t "${TMUX_PANE}" -p '#{window_index}' 2>/dev/null) || return 1
+    cp=$(tmux display-message -t "${TMUX_PANE}" -p '#{pane_index}' 2>/dev/null) || return 1
+  else
+    cs=$(tmux display-message -p '#{session_name}' 2>/dev/null) || return 1
+    cw=$(tmux display-message -p '#{window_index}' 2>/dev/null) || return 1
+    cp=$(tmux display-message -p '#{pane_index}' 2>/dev/null) || return 1
+  fi
   tw=$(tmux display-message -t "$session:$window" -p '#{window_index}' 2>/dev/null) || return 1
   [[ "$cs" == "$session" ]] || return 1
   [[ "$cw" == "$tw" ]] || return 1
@@ -141,7 +150,10 @@ print_client_line() {
   fi
 }
 
-# Window arg "." = current client's window index (#{window_index}). No hard-coded tab names.
+# Window arg "." = the calling pane's window index. No hard-coded tab names.
+# Use $TMUX_PANE (the calling pane's ID) so "." resolves to the window containing
+# the calling process — NOT the attached client's focused window. The client's focused
+# window changes whenever the user switches tabs, causing cross-window targeting bugs.
 expand_window_dot() {
   local window="$1"
   if [[ "$window" != . ]]; then
@@ -149,7 +161,11 @@ expand_window_dot() {
     return 0
   fi
   [[ -n "${TMUX:-}" ]] || { echo "error: window '.' requires TMUX (run inside tmux)" >&2; return 1; }
-  tmux display-message -p '#I' 2>/dev/null || { echo "error: tmux display-message #I failed" >&2; return 1; }
+  if [[ -n "${TMUX_PANE:-}" ]]; then
+    tmux display-message -t "${TMUX_PANE}" -p '#{window_index}' 2>/dev/null || { echo "error: tmux display-message window_index from TMUX_PANE=${TMUX_PANE} failed" >&2; return 1; }
+  else
+    tmux display-message -p '#I' 2>/dev/null || { echo "error: tmux display-message #I failed" >&2; return 1; }
+  fi
 }
 
 inventory() {
@@ -242,9 +258,17 @@ find_kw_session() {
   local csw cwi cpi wi wn idx t c
   csw=""; cwi=""; cpi=""
   if [[ -n "${TMUX:-}" ]]; then
-    csw=$(tmux display-message -p '#{session_name}' 2>/dev/null) || true
-    cwi=$(tmux display-message -p '#{window_index}' 2>/dev/null) || true
-    cpi=$(tmux display-message -p '#{pane_index}' 2>/dev/null) || true
+    # Use $TMUX_PANE (calling process's pane ID) so self-exclusion targets the invoking
+    # pane — not the client's focused pane, which changes when the user switches windows.
+    if [[ -n "${TMUX_PANE:-}" ]]; then
+      csw=$(tmux display-message -t "${TMUX_PANE}" -p '#{session_name}' 2>/dev/null) || true
+      cwi=$(tmux display-message -t "${TMUX_PANE}" -p '#{window_index}' 2>/dev/null) || true
+      cpi=$(tmux display-message -t "${TMUX_PANE}" -p '#{pane_index}' 2>/dev/null) || true
+    else
+      csw=$(tmux display-message -p '#{session_name}' 2>/dev/null) || true
+      cwi=$(tmux display-message -p '#{window_index}' 2>/dev/null) || true
+      cpi=$(tmux display-message -p '#{pane_index}' 2>/dev/null) || true
+    fi
   fi
 
   while IFS=$'\t' read -r wi wn; do
@@ -285,9 +309,17 @@ find_kw_session_all() {
   local csw cwi cpi wi wn idx t c found=0 emitted_panes
   csw=""; cwi=""; cpi=""; emitted_panes=""
   if [[ -n "${TMUX:-}" ]]; then
-    csw=$(tmux display-message -p '#{session_name}' 2>/dev/null) || true
-    cwi=$(tmux display-message -p '#{window_index}' 2>/dev/null) || true
-    cpi=$(tmux display-message -p '#{pane_index}' 2>/dev/null) || true
+    # Use $TMUX_PANE (calling process's pane ID) so self-exclusion targets the invoking
+    # pane — not the client's focused pane, which changes when the user switches windows.
+    if [[ -n "${TMUX_PANE:-}" ]]; then
+      csw=$(tmux display-message -t "${TMUX_PANE}" -p '#{session_name}' 2>/dev/null) || true
+      cwi=$(tmux display-message -t "${TMUX_PANE}" -p '#{window_index}' 2>/dev/null) || true
+      cpi=$(tmux display-message -t "${TMUX_PANE}" -p '#{pane_index}' 2>/dev/null) || true
+    else
+      csw=$(tmux display-message -p '#{session_name}' 2>/dev/null) || true
+      cwi=$(tmux display-message -p '#{window_index}' 2>/dev/null) || true
+      cpi=$(tmux display-message -p '#{pane_index}' 2>/dev/null) || true
+    fi
   fi
 
   while IFS=$'\t' read -r wi wn; do
@@ -333,9 +365,17 @@ find_kw_window() {
   local csw cwi cpi wi wn idx t c
   csw=""; cwi=""; cpi=""
   if [[ -n "${TMUX:-}" ]]; then
-    csw=$(tmux display-message -p '#{session_name}' 2>/dev/null) || true
-    cwi=$(tmux display-message -p '#{window_index}' 2>/dev/null) || true
-    cpi=$(tmux display-message -p '#{pane_index}' 2>/dev/null) || true
+    # Use $TMUX_PANE (calling process's pane ID) so self-exclusion targets the invoking
+    # pane — not the client's focused pane, which changes when the user switches windows.
+    if [[ -n "${TMUX_PANE:-}" ]]; then
+      csw=$(tmux display-message -t "${TMUX_PANE}" -p '#{session_name}' 2>/dev/null) || true
+      cwi=$(tmux display-message -t "${TMUX_PANE}" -p '#{window_index}' 2>/dev/null) || true
+      cpi=$(tmux display-message -t "${TMUX_PANE}" -p '#{pane_index}' 2>/dev/null) || true
+    else
+      csw=$(tmux display-message -p '#{session_name}' 2>/dev/null) || true
+      cwi=$(tmux display-message -p '#{window_index}' 2>/dev/null) || true
+      cpi=$(tmux display-message -p '#{pane_index}' 2>/dev/null) || true
+    fi
   fi
 
   while IFS=$'\t' read -r wi wn; do

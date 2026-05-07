@@ -30,7 +30,11 @@ _expand_session_window() {
     session=$(tmux display-message -p '#{session_name}' 2>/dev/null) || { echo "unknown"; exit 2; }
   fi
   if [[ "$window" == "." ]]; then
-    window=$(tmux display-message -p '#I' 2>/dev/null) || { echo "unknown"; exit 2; }
+    if [[ -n "${TMUX_PANE:-}" ]]; then
+      window=$(tmux display-message -t "${TMUX_PANE}" -p '#{window_index}' 2>/dev/null) || { echo "unknown"; exit 2; }
+    else
+      window=$(tmux display-message -p '#I' 2>/dev/null) || { echo "unknown"; exit 2; }
+    fi
   fi
   echo "$session $window"
 }

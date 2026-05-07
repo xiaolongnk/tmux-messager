@@ -90,14 +90,20 @@ echo ""
 # ── Role tracking (bash 3 compatible: space-separated strings) ───────────────
 
 registered_roles=""
+registered_pane_ids=""
 registered_count=0
 
 _role_registered() {
   echo " $registered_roles " | grep -qF " $1 "
 }
 
+_pane_registered() {
+  echo " $registered_pane_ids " | grep -qF " $1 "
+}
+
 _mark_registered() {
   registered_roles="${registered_roles} $1"
+  registered_pane_ids="${registered_pane_ids} $2"
   registered_count=$(( registered_count + 1 ))
 }
 
@@ -121,7 +127,12 @@ _unique_role() {
 layout_hints=""
 
 # Current window index at parse time — used to scope bare pane specs (e.g. "cursor:4").
-_CURRENT_WINDOW_IDX=$(tmux display-message -p '#{window_index}' 2>/dev/null) || _CURRENT_WINDOW_IDX="0"
+# Use $TMUX_PANE to anchor to the calling process's window, not the client's focused window.
+if [[ -n "${TMUX_PANE:-}" ]]; then
+  _CURRENT_WINDOW_IDX=$(tmux display-message -t "${TMUX_PANE}" -p '#{window_index}' 2>/dev/null) || _CURRENT_WINDOW_IDX="0"
+else
+  _CURRENT_WINDOW_IDX=$(tmux display-message -p '#{window_index}' 2>/dev/null) || _CURRENT_WINDOW_IDX="0"
+fi
 
 _parse_layout() {
   local spec="$1"
@@ -208,7 +219,7 @@ _register_pane() {
     echo "           → [dry-run] would set-pane-id ${role}=${pane_id}"
     echo "           → [dry-run] would set-submit-key ${role}=${submit_key}"
   fi
-  _mark_registered "$role"
+  _mark_registered "$role" "$pane_id"
 }
 
 # ── Content fingerprint checks ───────────────────────────────────────────────
@@ -228,6 +239,36 @@ _is_gemini_content() {
     '(Gemini CLI|gemini>|\[Gemini\]|Google Gemini|gemini-[0-9]|╔.*Gemini)'
 }
 
+# ── Phase 0: Pane-tag user-options (highest priority) ────────────────────────
+# Reads @coworker-role set via tmux-pane-tag.sh. Stable across restarts and
+# title changes. See tmux-pane-tag.sh for tagging details.
+
+echo "--- Phase 0: Pane-tagged roles (@coworker-role) ---"
+echo ""
+phase0_count=0
+while IFS= read -r raw_line; do
+  window_idx=$(printf '%s' "$raw_line" | cut -d'|' -f1)
+  pane_idx=$(printf '%s' "$raw_line"   | cut -d'|' -f2)
+  pane_id=$(printf '%s' "$raw_line"    | cut -d'|' -f3)
+  title=$(printf '%s' "$raw_line"      | cut -d'|' -f4)
+  tag_role=$(printf '%s' "$raw_line"   | cut -d'|' -f5)
+
+  [[ -z "$tag_role" ]] && continue
+
+  if _role_registered "$tag_role"; then
+    echo "  [dup]    ${SESSION}:${window_idx}.${pane_idx} role=${tag_role} — already registered"
+    continue
+  fi
+
+  _register_pane "$tag_role" "$pane_id" "$window_idx" "$pane_idx" "$title" "tag"
+  phase0_count=$(( phase0_count + 1 ))
+done < <(tmux list-panes -s -t "$SESSION" \
+  -F '#{window_index}|#{pane_index}|#{pane_id}|#{pane_title}|#{@coworker-role}' \
+  2>/dev/null)
+
+[[ "$phase0_count" -eq 0 ]] && echo "  (no panes carry @coworker-role)"
+echo ""
+
 # ── Phase 1: Layout-declared panes ───────────────────────────────────────────
 
 if [[ -n "$LAYOUT_SPEC" ]]; then
@@ -242,6 +283,10 @@ if [[ -n "$LAYOUT_SPEC" ]]; then
     declared_role=$(_layout_role_for_index "$window_idx" "$pane_idx")
     [[ -z "$declared_role" ]] && continue
 
+    if _pane_registered "$pane_id"; then
+      echo "  [skip]   ${SESSION}:${window_idx}.${pane_idx} pane_id=${pane_id} — already tagged in Phase 0"
+      continue
+    fi
     if _role_registered "$declared_role"; then
       echo "  [dup]    ${SESSION}:${window_idx}.${pane_idx} role=${declared_role} — already registered"
       continue
@@ -272,6 +317,12 @@ while IFS= read -r raw_line; do
   [[ -n "$_MY_PANE_ID" && "$pane_id" == "$_MY_PANE_ID" ]] && continue
 
   target="${SESSION}:${window_idx}.${pane_idx}"
+
+  # Skip panes already registered by Phase 0 (tag) or Phase 1 (layout)
+  if _pane_registered "$pane_id"; then
+    echo "  [skip]   ${target} pane_id=${pane_id} — already registered (tag/layout)"
+    continue
+  fi
 
   # Skip panes already handled by layout hints
   if [[ -n "$LAYOUT_SPEC" ]]; then

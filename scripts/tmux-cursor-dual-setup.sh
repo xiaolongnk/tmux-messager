@@ -17,7 +17,14 @@ HELPER="$_HELPER_DIR/tmux-pane-helper.sh"
 SEND="$_HELPER_DIR/tmux-target-send.sh"
 
 S=$(tmux display-message -p '#{session_name}') || exit 1
-W=$(tmux display-message -p '#I') || exit 1
+# Use $TMUX_PANE to anchor window + calling pane index — avoids client's focused window.
+if [[ -n "${TMUX_PANE:-}" ]]; then
+  W=$(tmux display-message -t "${TMUX_PANE}" -p '#{window_index}') || exit 1
+  CLAUDE_PANE_IDX=$(tmux display-message -t "${TMUX_PANE}" -p '#{pane_index}') || CLAUDE_PANE_IDX="0"
+else
+  W=$(tmux display-message -p '#I') || exit 1
+  CLAUDE_PANE_IDX="0"
+fi
 
 CURSOR_TITLES=("cursor-1" "cursor-2")
 AGENT_CMD="${CURSOR_AGENT_CMD:-cursor}"  # override: export CURSOR_AGENT_CMD=your-binary
@@ -93,25 +100,22 @@ cmd_setup() {
   echo "Creating dual cursor layout..."
 
   # Split current window horizontally (right pane).
-  tmux split-window -t "$S:$W" -h -p 50 2>/dev/null || {
+  # Use -P -F '#{pane_index}' to atomically capture the new pane's index from split-window
+  # itself — avoids reading display-message without -t which returns the client's active pane.
+  local pane2 pane3
+  pane2=$(tmux split-window -t "$S:$W" -h -p 50 -P -F '#{pane_index}' 2>/dev/null) || {
     echo "error: horizontal split failed" >&2; exit 1;
   }
-  # New pane is now the active one — it got the next pane index.
-  # Get its index.
-  local pane2
-  pane2=$(tmux display-message -p '#{pane_index}' 2>/dev/null)
   tmux send-keys -t "$S:$W.$pane2" "$AGENT_CMD" C-m
 
   # Split pane2 vertically (bottom half).
-  tmux split-window -t "$S:$W.$pane2" -v -p 50 2>/dev/null || {
+  pane3=$(tmux split-window -t "$S:$W.$pane2" -v -p 50 -P -F '#{pane_index}' 2>/dev/null) || {
     echo "error: vertical split failed" >&2; exit 1;
   }
-  local pane3
-  pane3=$(tmux display-message -p '#{pane_index}' 2>/dev/null)
   tmux send-keys -t "$S:$W.$pane3" "$AGENT_CMD" C-m
 
-  # Refocus Claude pane (pane 1).
-  tmux select-pane -t "$S:$W.1" 2>/dev/null || true
+  # Refocus the calling Claude pane (captured at script start via $TMUX_PANE).
+  tmux select-pane -t "$S:$W.${CLAUDE_PANE_IDX}" 2>/dev/null || true
 
   # Set pane titles after a delay — Cursor Agent overwrites the title on startup.
   ( sleep 5 && tmux select-pane -t "$S:$W.$pane2" -T "cursor-1" && tmux select-pane -t "$S:$W.$pane3" -T "cursor-2" ) &

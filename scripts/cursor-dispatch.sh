@@ -36,7 +36,13 @@ STATE_FILE="/tmp/claude-tmux-cursor-dispatch-state.json"
 [[ -n "${TMUX:-}" ]] || { echo "error: run inside tmux" >&2; exit 2; }
 
 S=$(tmux display-message -p '#{session_name}' 2>/dev/null) || exit 2
-W=$(tmux display-message -p '#I' 2>/dev/null) || exit 2
+# Use $TMUX_PANE (calling process's pane ID) to anchor window resolution to the manager's
+# window — not the attached client's focused window, which changes when user switches tabs.
+if [[ -n "${TMUX_PANE:-}" ]]; then
+  W=$(tmux display-message -t "${TMUX_PANE}" -p '#{window_index}' 2>/dev/null) || exit 2
+else
+  W=$(tmux display-message -p '#I' 2>/dev/null) || exit 2
+fi
 
 WAIT_SECONDS=30
 FORCE_TARGET=""
